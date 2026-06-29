@@ -10,7 +10,6 @@ fi
 mkdir -p "src/$mod"
 
 cat <<EOF > "src/$mod/mod.rs"
-pub mod interfaces;
 pub mod dtos;
 pub mod controller;
 pub mod service;
@@ -18,8 +17,7 @@ pub mod repository;
 EOF
 
 # 2. Creamos los archivos individuales
-touch "src/$mod/interfaces.rs" \
-      "src/$mod/dtos.rs" \
+touch "src/$mod/dtos.rs" \
       "src/$mod/controller.rs" \
       "src/$mod/service.rs" \
       "src/$mod/repository.rs"

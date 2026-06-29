@@ -2,8 +2,10 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*; // Importa todo lo de arriba
+    use super::*;
 
     #[tokio::test]
-    async fn a() { ... }
+    async fn repository_placeholder_test() {
+        assert!(true);
+    }
 }
