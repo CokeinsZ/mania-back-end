@@ -1,6 +1,7 @@
 use axum::{Router};
 
 mod users;
+mod tools;
 use users::controller::user_routes;
 
 #[tokio::main]
