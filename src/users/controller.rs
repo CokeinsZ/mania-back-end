@@ -6,29 +6,9 @@ use axum::{
 };
 use validator::Validate;
 use crate::users::dtos::*;
-
-fn json_response(status: StatusCode, body: serde_json::Value) -> (StatusCode, Json<serde_json::Value>) {
-    (status, Json(body))
-}
-
-fn build_validation_response(errors: validator::ValidationErrors) -> (StatusCode, Json<serde_json::Value>) {
-    let mut error_messages = Vec::new();
-
-    for (field, field_errors) in errors.field_errors() {
-        for error in field_errors {
-            let message = error.message.as_deref().unwrap_or("invalid value");
-            error_messages.push(format!("{field}: {message}"));
-        }
-    }
-
-    json_response(
-        StatusCode::BAD_REQUEST,
-        serde_json::json!({
-            "message": "Invalid user data",
-            "errors": error_messages
-        }),
-    )
-}
+use crate::payments::dtos::{Payment, payment_method, payment_state};
+use crate::invoices::dtos::{Invoice, invoice_state};
+use crate::tools::responses::{json_response, build_validation_response};
 
 async fn create_user(Json(user): Json<CreateUserDto>) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(errors) = user.validate() {
@@ -48,11 +28,25 @@ async fn get_user(Path(id): Path<String>, Query(filters): Query<UserFilters>) ->
         return build_validation_response(errors);
     }
 
+    let user: User = User {
+        id: id.clone(),
+        full_name: "John Doe".to_string(),
+        entity_type: user_entity_type::Natural,
+        government_id: "1234567890".to_string(),
+        email: "john.doe@example.com".to_string(),
+        phone: "1234567890".to_string(),
+        address: "123 Main St".to_string(),
+        created_at: "2023-01-01T00:00:00Z".to_string(),
+        updated_at: "2023-01-01T00:00:00Z".to_string(),
+        state: user_state::Active
+    };
+
     json_response(
         StatusCode::NOT_IMPLEMENTED,
         serde_json::json!({
             "message": format!("User {id} retrieved"),
-            "filters": filters
+            "filters": filters,
+            "users": [user]
         }),
     )
 }
@@ -80,10 +74,42 @@ async fn delete_user(Path(id): Path<String>) -> (StatusCode, Json<serde_json::Va
 }
 
 async fn get_user_payments(Path(id): Path<String>) -> (StatusCode, Json<serde_json::Value>) {
+    let payment = Payment {
+        id: "payment_1".to_string(),
+        amount: 100.0,
+        method: payment_method::Card,
+        full_payload: "{}".to_string(),
+        created_at: "2023-01-01T00:00:00Z".to_string(),
+        updated_at: "2023-01-01T00:00:00Z".to_string(),
+        state: payment_state::Completed,
+        invoice_id: "invoice_1".to_string()
+    };
+    
     json_response(
         StatusCode::NOT_IMPLEMENTED,
         serde_json::json!({
-            "message": format!("User {id} payments")
+            "message": format!("User {id} payments"),
+            "payments": [payment]
+        }),
+    )
+}
+
+async fn get_user_invoices(Path(id): Path<String>) -> (StatusCode, Json<serde_json::Value>) {
+    let invoice = Invoice {
+        id: "invoice_1".to_string(),
+        user_id: id.clone(),
+        total_amount: 100.0,
+        description: "Sample invoice".to_string(),
+        created_at: "2023-01-01T00:00:00Z".to_string(),
+        updated_at: "2023-01-01T00:00:00Z".to_string(),
+        state: invoice_state::Completed
+    };
+    
+    json_response(
+        StatusCode::NOT_IMPLEMENTED,
+        serde_json::json!({
+            "message": format!("User {id} invoices"),
+            "invoices": [invoice]
         }),
     )
 }
@@ -93,6 +119,7 @@ pub fn user_routes() -> Router {
         .route("/", post(create_user))
         .route("/{id}", get(get_user).put(update_user).delete(delete_user))
         .route("/{id}/payments", get(get_user_payments))
+        .route("/{id}/invoices", get(get_user_invoices))
 }
 
 #[cfg(test)]
@@ -111,9 +138,9 @@ mod tests {
         let user_data = CreateUserDto {
             full_name: "John Doe".to_string(),
             entity_type: user_entity_type::Natural,
-            government_id: "1234567890".to_string(),
+            government_id: "1234567890-12".to_string(),
             email: "john.doe@example.com".to_string(),
-            phone: "1234567890".to_string(),
+            phone: "+571234567890".to_string(),
             password: "Password123".to_string(),
             address: "123 Main St".to_string(),
         };
@@ -160,11 +187,35 @@ mod tests {
                 },
             ),
             (
-                "Invalid government ID",
+                "Short government ID",
                 CreateUserDto {
                     full_name: "John Doe".to_string(),
                     entity_type: user_entity_type::Natural,
                     government_id: "123".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    password: "Password123".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Invalid government ID",
+                CreateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1a23-45".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    password: "Password123".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Long government ID",
+                CreateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "123456789012".to_string(),
                     email: "john.doe@example.com".to_string(),
                     phone: "1234567890".to_string(),
                     password: "Password123".to_string(),
@@ -184,13 +235,25 @@ mod tests {
                 },
             ),
             (
-                "Invalid phone",
+                "Short phone",
                 CreateUserDto {
                     full_name: "John Doe".to_string(),
                     entity_type: user_entity_type::Natural,
                     government_id: "1234567890".to_string(),
                     email: "john.doe@example.com".to_string(),
                     phone: "123".to_string(),
+                    password: "Password123".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Invalid phone",
+                CreateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "cel:123456".to_string(),
                     password: "Password123".to_string(),
                     address: "123 Main St".to_string(),
                 },
@@ -248,5 +311,340 @@ mod tests {
             println!("Headers: {:?}", headers);
             println!("Body: {}", body_text);
         }
+    }
+
+    #[tokio::test]
+    async fn get_user_by_id() {
+        let routes = user_routes();
+
+        let user_id = "123";
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{}", user_id))
+                    .method("GET")
+                    .header("Content-Type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let body_json: serde_json::Value = serde_json::from_str(&body_text).unwrap();
+
+        assert_eq!(body_json["users"][0]["id"], user_id);
+        assert_eq!(body_json["message"], format!("User {user_id} retrieved"));
+
+        println!("\n\n Test Get User Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
+
+    }
+
+    #[tokio::test]
+    async fn get_user_by_filters() {
+        let routes = user_routes();
+
+        let user_id = "-1";
+        let user_name = "John Doe";
+        let government_id = "1234567890";
+        let phone = "1234567890";
+        
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{user_id}?government_id={government_id}&phone={phone}"))
+                    .method("GET")
+                    .header("Content-Type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let body_json: serde_json::Value = serde_json::from_str(&body_text).unwrap();
+
+        let users = body_json["users"].as_array().expect("users must be an array");
+        for user in users {
+            let matches_name = user["full_name"] == user_name;
+            let matches_government_id = user["government_id"] == government_id;
+            let matches_phone = user["phone"] == phone;
+
+            assert!(matches_name || matches_government_id || matches_phone,
+                "User did not match at least one filter: {}", user
+            );
+        }
+        
+        println!("\n\n Test Get User Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
+
+    }
+
+    #[tokio::test]
+    async fn update_user() {
+        let routes = user_routes();
+
+        let user_id = "123";
+        let user_data = UpdateUserDto {
+            full_name: "John Doe".to_string(),
+            entity_type: user_entity_type::Natural,
+            government_id: "1234567890-12".to_string(),
+            email: "john.doe@example.com".to_string(),
+            phone: "+571234567890".to_string(),
+            address: "123 Main St".to_string(),
+        };
+
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{user_id}"))
+                    .method("PUT")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(serde_json::to_string(&user_data).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        println!("\n\n Test Update User Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
+
+    }
+
+    #[tokio::test]
+    async fn update_invalid_user() {
+        let user_id = "123";
+        let invalid_cases = vec![
+            (
+                "Empty full name",
+                UpdateUserDto {
+                    full_name: "".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Short government ID",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "123".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Invalid government ID",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1a23-45".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Long government ID",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "123456789012".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Invalid email",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "invalid-email".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Short phone",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "123".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Invalid phone",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "cel:123456".to_string(),
+                    address: "123 Main St".to_string(),
+                },
+            ),
+            (
+                "Empty address",
+                UpdateUserDto {
+                    full_name: "John Doe".to_string(),
+                    entity_type: user_entity_type::Natural,
+                    government_id: "1234567890".to_string(),
+                    email: "john.doe@example.com".to_string(),
+                    phone: "1234567890".to_string(),
+                    address: "".to_string(),
+                },
+            ),
+        ];
+
+        for (case_name, invalid_user_data) in invalid_cases {
+            let routes = user_routes();
+
+            let response = routes
+                .oneshot(
+                    Request::builder()
+                        .uri(&format!("/{user_id}"))
+                        .method("PUT")
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(serde_json::to_string(&invalid_user_data).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            let status = response.status();
+            let headers = response.headers().clone();
+
+            assert_eq!(status, StatusCode::BAD_REQUEST, "Failed: {case_name}");
+
+            let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+            println!("\n\nTest Update Invalid User Response [{case_name}]");
+            println!("Headers: {:?}", headers);
+            println!("Body: {}", body_text);
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_user() {
+        let routes = user_routes();
+        let user_id = "123";
+
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{user_id}"))
+                    .method("DELETE")
+                    .header("Content-Type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        println!("\n\n Test Delete User Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
+    }
+
+    #[tokio::test]
+    async fn get_user_payments() {
+        let routes = user_routes();
+        let user_id = "123";
+
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{user_id}/payments"))
+                    .method("GET")
+                    .header("Content-Type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        println!("\n\n Test Get User Payments Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
+    }
+
+    #[tokio::test]
+    async fn get_user_invoices() {
+        let routes = user_routes();
+        let user_id = "123";
+
+        let response = routes
+            .oneshot(
+                Request::builder()
+                    .uri(&format!("/{user_id}/invoices"))
+                    .method("GET")
+                    .header("Content-Type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        println!("\n\n Test Get User Invoices Response:");
+        println!("Headers: {:?}", headers);
+        println!("Body: {}", body_text);
     }
 }

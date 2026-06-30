@@ -33,3 +33,4 @@ pub fn validate_password(value: &str) -> Result<(), ValidationError> {
         Err(error)
     }
 }
+

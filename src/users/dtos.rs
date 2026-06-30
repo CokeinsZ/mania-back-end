@@ -1,9 +1,18 @@
 use serde::{Deserialize, Serialize};
 use validator::{Validate};
+use once_cell::sync::Lazy;
+use regex::Regex;
 
-use crate::tools::custom_validators::{validate_non_blank, validate_numeric, validate_password};
+use crate::tools::custom_validators::{validate_non_blank, validate_password};
 
-#[warn(non_snake_case)]
+static GOVERNMENT_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(?:\d{10}|\d{10}-\d{2})$").unwrap()
+});
+
+static PHONE_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(?:\d{7}|\d{10}|\+\d{12})$").unwrap()
+});
+
 #[derive(Debug, Deserialize, Serialize)]
 pub enum user_entity_type {
     Natural,
@@ -39,13 +48,13 @@ pub struct CreateUserDto {
 
     pub entity_type: user_entity_type, 
 
-    #[validate(custom(function = "validate_numeric"), length(min = 10, max = 13, message = "El documento de identificación debe tener entre 10 y 13 caracteres"))]
+    #[validate(regex(path = *GOVERNMENT_ID_REGEX, message = "El documento debe ser 10 dígitos o 10 dígitos seguido de guion y 2 dígitos"))]
     pub government_id: String,
     
     #[validate(email(message = "Email inválido"))]
     pub email: String,
     
-    #[validate(custom(function = "validate_numeric"), length(min = 7, max = 13, message = "El teléfono debe tener entre 7 y 13 caracteres"))]
+    #[validate(regex(path = *PHONE_REGEX, message = "El teléfono debe ser 7, 10 o '+57' y 10 dígitos"))]
     pub phone: String,
 
     #[validate(custom(function = "validate_password"))]
@@ -62,13 +71,13 @@ pub struct UpdateUserDto {
 
     pub entity_type: user_entity_type, 
 
-    #[validate(length(min = 10, max = 13, message = "El documento de identificación debe tener entre 10 y 13 caracteres"))]
+    #[validate(regex(path = *GOVERNMENT_ID_REGEX, message = "El documento debe ser 10 dígitos o 10 dígitos seguido de guion y 2 dígitos"))]
     pub government_id: String,
     
     #[validate(email(message = "Email inválido"))]
     pub email: String,
     
-    #[validate(length(min = 1, max = 13, message = "El teléfono debe tener entre 1 y 13 caracteres"))]
+    #[validate(regex(path = *PHONE_REGEX, message = "El teléfono debe ser 7, 10 o '+57' y 10 dígitos"))]
     pub phone: String,
 
     #[validate(length(min = 1, message = "La dirección debe tener mas de 1 caracter"))]
@@ -92,6 +101,6 @@ pub struct UserFilters {
     #[validate(length(min = 10, max = 13, message = "El documento de identificación debe tener entre 10 y 13 caracteres"))]
     pub government_id: Option<String>,
     
-    #[validate(length(min = 1, max = 13, message = "El teléfono debe tener entre 1 y 13 caracteres"))]
+    #[validate(regex(path = *PHONE_REGEX, message = "El teléfono debe ser 7, 10 o '+57' y 10 dígitos"))]
     pub phone: Option<String>
 }

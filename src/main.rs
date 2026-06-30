@@ -2,6 +2,8 @@ use axum::{Router};
 
 mod users;
 mod tools;
+mod invoices;
+mod payments;
 use users::controller::user_routes;
 
 #[tokio::main]
