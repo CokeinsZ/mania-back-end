@@ -1,26 +1,42 @@
 use axum::{
-    Router, 
-    extract::{Path, Query, Json},
-    http::StatusCode, 
-    routing::{get, post}
+    Router, extract::{Json, Path, Query, State}, http::StatusCode, routing::{get, post}
 };
 use validator::Validate;
+
+use crate::state::{UserState};
 use crate::users::dtos::*;
 use crate::payments::dtos::{Payment, payment_method, payment_state};
 use crate::invoices::dtos::{Invoice, invoice_state};
 use crate::tools::responses::{json_response, build_validation_response};
 
-async fn create_user(Json(user): Json<CreateUserDto>) -> (StatusCode, Json<serde_json::Value>) {
+async fn create_user(
+        State(state): State<UserState>,
+        Json(user): Json<CreateUserDto>
+    ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(errors) = user.validate() {
         return build_validation_response(errors);
     }
 
-    json_response(
-        StatusCode::NOT_IMPLEMENTED,
-        serde_json::json!({
-            "message": "User created"
-        }),
-    )
+    match state.user_service.create_user(user).await {
+        Ok(message) => {
+            json_response(
+                StatusCode::NOT_IMPLEMENTED,
+                serde_json::json!({
+                    "message": message
+                }),
+            )
+        },
+        Err(e) => {
+            json_response(
+                StatusCode::NOT_IMPLEMENTED,
+                serde_json::json!({
+                    "message": e
+                }),
+            )
+        }
+    }
+
+    
 }
 
 async fn get_user(Path(id): Path<String>, Query(filters): Query<UserFilters>) -> (StatusCode, Json<serde_json::Value>) {
@@ -114,12 +130,13 @@ async fn get_user_invoices(Path(id): Path<String>) -> (StatusCode, Json<serde_js
     )
 }
 
-pub fn user_routes() -> Router {
+pub fn user_routes(state: UserState) -> Router {
     Router::new()
         .route("/", post(create_user))
         .route("/{id}", get(get_user).put(update_user).delete(delete_user))
         .route("/{id}/payments", get(get_user_payments))
         .route("/{id}/invoices", get(get_user_invoices))
+        .with_state(state)
 }
 
 #[cfg(test)]
@@ -129,11 +146,38 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
+    use sqlx::postgres::PgPoolOptions;
     use tower::ServiceExt;
+    use std::sync::Arc;
+
+    use crate::{state::AppState, users::service::UserService };
+
+    async fn create_routes() -> Router {
+        let app_state = AppState { };
+
+        let database_url = std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://admin:secretpassword@localhost/mydb".into())
+        ;
+ 
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .expect("Failed to connect to database")
+        ;
+    
+        let user_repository = Arc::new(crate::users::repository::PostgresUserRepository::new(pool.clone()));
+
+        let user_state = UserState {
+            user_service: Arc::new(UserService::new(user_repository)),
+            global_state: Arc::new(app_state),
+        };
+        user_routes(user_state)
+    }
 
     #[tokio::test]
     async fn create_user() {
-        let routes = user_routes();
+        let routes = create_routes().await;
 
         let user_data = CreateUserDto {
             full_name: "John Doe".to_string(),
@@ -165,7 +209,7 @@ mod tests {
         let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
 
-        println!("\n\n Test Create User Response:");
+        println!("\n\nTest Create User Response:");
         println!("Headers: {:?}", headers);
         println!("Body: {}", body_text);
 
@@ -285,7 +329,7 @@ mod tests {
         ];
 
         for (case_name, invalid_user_data) in invalid_cases {
-            let routes = user_routes();
+            let routes = create_routes().await;
 
             let response = routes
                 .oneshot(
@@ -315,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_by_id() {
-        let routes = user_routes();
+        let routes = create_routes().await;
 
         let user_id = "123";
         let response = routes
@@ -350,7 +394,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_by_filters() {
-        let routes = user_routes();
+        let routes = create_routes().await;
 
         let user_id = "-1";
         let user_name = "John Doe";
@@ -397,7 +441,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_user() {
-        let routes = user_routes();
+        let routes = create_routes().await;
 
         let user_id = "123";
         let user_data = UpdateUserDto {
@@ -530,7 +574,7 @@ mod tests {
         ];
 
         for (case_name, invalid_user_data) in invalid_cases {
-            let routes = user_routes();
+            let routes = create_routes().await;
 
             let response = routes
                 .oneshot(
@@ -560,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_user() {
-        let routes = user_routes();
+        let routes = create_routes().await;
         let user_id = "123";
 
         let response = routes
@@ -590,7 +634,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_payments() {
-        let routes = user_routes();
+        let routes = create_routes().await;
         let user_id = "123";
 
         let response = routes
@@ -620,7 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_invoices() {
-        let routes = user_routes();
+        let routes = create_routes().await;
         let user_id = "123";
 
         let response = routes
